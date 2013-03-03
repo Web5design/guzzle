@@ -2,6 +2,7 @@
 
 namespace Guzzle\Service\Command;
 
+use Guzzle\Common\Exception\InvalidArgumentException;
 use Guzzle\Http\Message\Response;
 use Guzzle\Service\Command\LocationVisitor\VisitorFlyweight;
 use Guzzle\Service\Command\LocationVisitor\Response\ResponseVisitorInterface;
@@ -92,8 +93,24 @@ class OperationResponseParser extends DefaultResponseParser
      * @param Response         $response Response received
      *
      * @return array Returns the array of result data
+     * @throws InvalidArgumentException when an invalid model is encountered
      */
     protected function visitResult(
+        Parameter $model,
+        CommandInterface $command,
+        Response $response
+    ) {
+        switch ($model->getType()) {
+            case 'object':
+                return $this->parseObject($model, $command, $response);
+            case 'array':
+                return $this->parseArray($model, $command, $response);
+            default:
+                throw new InvalidArgumentException($model->getType() . ' is not a supported response model type');
+        }
+    }
+
+    protected function parseObject(
         Parameter $model,
         CommandInterface $command,
         Response $response
@@ -124,5 +141,23 @@ class OperationResponseParser extends DefaultResponseParser
         }
 
         return $result;
+    }
+
+    protected function parseArray(
+        Parameter $model,
+        CommandInterface $command,
+        Response $response
+    ) {
+        $result = array();
+        $visitor = $this->factory->getResponseVisitor($model->getLocation());
+        $visitor->before($command, $result);
+        $result = array('items' => $result);
+        $current = $model->getName();
+        $model->setName('items');
+        $visitor->visit($command, $response, $model, $result);
+        $visitor->after($command);
+        $model->setName($current);
+
+        return $result['items'];
     }
 }
